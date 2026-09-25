@@ -274,11 +274,16 @@ async function runVerification(site) {
     const course = currentCourses().find(c => c.id === a.courseId);
     return textMatchesKeywords(normalizedAssignmentText(a, course), [site.name]);
   });
-  const platformAssignments = site.assignments || liveSiteConnections[site.catalogId]?.assignments || [];
+  const linkedSite = liveSiteConnections[site.catalogId] || site;
+  const platformAssignments = linkedSite.assignments || [];
+  const platformPageText = String(linkedSite.pageText || "").toLowerCase();
   results.forEach((assignment) => {
     const match = platformAssignments.find((item) => assignmentTextsMatch(assignment, item));
-    if (match?.completed) platformCompletedAssignments.add(assignment.id);
-    else platformCompletedAssignments.delete(assignment.id);
+    const assignmentWords = `${assignment.title} ${assignment.description || ""}`.toLowerCase().replace(/[^a-z0-9]+/g, " ").split(" ").filter((word) => word.length > 2);
+    const pageHasAssignment = assignmentWords.filter((word) => platformPageText.includes(word)).length >= Math.min(2, assignmentWords.length);
+    const pageSaysComplete = /\b(completed|finished|mastered|submitted|passed|done|100\s*%)\b/.test(platformPageText);
+    if (match?.completed === true || (!match && pageHasAssignment && pageSaysComplete)) platformCompletedAssignments.add(assignment.id);
+    else if (match?.completed === false || (!match && pageHasAssignment && !pageSaysComplete)) platformCompletedAssignments.delete(assignment.id);
   });
   const logListEl = document.getElementById("verify-log-list");
   const timestamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });

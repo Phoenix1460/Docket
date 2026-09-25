@@ -29,7 +29,7 @@
   const send = (payload) => chrome.runtime.sendMessage({ type: MESSAGE, payload }, () => void chrome.runtime.lastError);
 
   function pageAssignments() {
-    const selectors = ["a[href*='assignment']", "a[href*='activity']", "a[href*='lesson']", "[class*='assignment']", "[class*='activity']", "[class*='lesson']"];
+    const selectors = ["a[href*='assignment']", "a[href*='activity']", "a[href*='lesson']", "[class*='assignment']", "[class*='activity']", "[class*='lesson']", "[class*='problem']", "[class*='exercise']", "[class*='task']", "[data-testid*='assignment']", "[data-testid*='activity']"];
     const seen = new Set();
     return [...document.querySelectorAll(selectors.join(","))].map((node) => {
       const title = clean(node.textContent || node.getAttribute("aria-label"));
@@ -41,7 +41,12 @@
       const node = [...document.querySelectorAll(selectors.join(","))].find((candidate) => clean(candidate.textContent || candidate.getAttribute("aria-label")) === assignment.title);
       const context = clean(node?.closest("article, li, tr, [class*='card'], [class*='assignment'], [class*='activity']")?.innerText || node?.parentElement?.innerText || node?.innerText || "");
       const text = context.toLowerCase();
-      return { ...assignment, description: context, completed: /completed|complete|finished|mastered|submitted|passed|100%/.test(text) };
+      const titleWords = assignment.title.toLowerCase().replace(/[^a-z0-9]+/g, " ").split(" ").filter((word) => word.length > 2);
+      const bodyText = clean(document.body?.innerText).toLowerCase();
+      const titleAppearsOnPage = titleWords.length > 0 && titleWords.filter((word) => bodyText.includes(word)).length >= Math.min(2, titleWords.length);
+      const completionMarker = /\b(completed|finished|mastered|submitted|passed|done|100\s*%|checkmark|check mark)\b/.test(text);
+      const pageCompletionMarker = titleAppearsOnPage && /\b(completed|finished|mastered|submitted|passed|done|100\s*%)\b/.test(bodyText);
+      return { ...assignment, description: context, completed: completionMarker || pageCompletionMarker };
     });
   }
 
