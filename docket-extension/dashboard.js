@@ -162,14 +162,18 @@ const homeworkSitesCatalog = [
 
 // In-memory only — intentionally not persisted, see credential note in the UI.
 let linkedSites = [];
-let liveSiteConnections = {};
+  let liveSiteConnections = {};
+  const platformCompletedAssignments = new Set();
+  let autoCheckEnabled = true;
+  let autoCheckTimer = null;
+
 
 function mergeSiteConnections(sites) {
   liveSiteConnections = sites || {};
   for (const payload of Object.values(liveSiteConnections)) {
     const existing = linkedSites.find((site) => site.catalogId === payload.providerId);
     const catalog = homeworkSitesCatalog.find((entry) => entry.id === payload.providerId);
-    const next = { catalogId: payload.providerId, name: payload.providerName || catalog?.name || payload.hostname, authMethod: "existing-session", linked: true, lastVerified: payload.syncedAt ? new Date(payload.syncedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null, url: payload.pageUrl, hostname: payload.hostname };
+    const next = { catalogId: payload.providerId, name: payload.providerName || catalog?.name || payload.hostname, authMethod: "existing-session", linked: true, lastVerified: payload.syncedAt ? new Date(payload.syncedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null, url: payload.pageUrl, hostname: payload.hostname, assignments: payload.assignments || [] };
     if (existing) Object.assign(existing, next); else linkedSites.push(next);
   }
   renderSiteList();
@@ -249,6 +253,12 @@ async function runVerification(site) {
   });
 
   const results = matches.length ? matches : currentAssignments().filter(a => a.title.toLowerCase().includes(site.name.toLowerCase()));
+  const platformAssignments = site.assignments || liveSiteConnections[site.catalogId]?.assignments || [];
+  results.forEach((assignment) => {
+    const match = platformAssignments.find((item) => item.title && (item.title.toLowerCase().includes(assignment.title.toLowerCase()) || assignment.title.toLowerCase().includes(item.title.toLowerCase())));
+    if (match?.completed) platformCompletedAssignments.add(assignment.id);
+    else platformCompletedAssignments.delete(assignment.id);
+  });
   const logListEl = document.getElementById("verify-log-list");
   const timestamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
@@ -338,7 +348,8 @@ function renderAssignmentCard(a) {
   const sub = currentSubmissions()[a.id] || {};
   const skillCodes = extractSkillCodes(a.title + " " + a.description);
   const subjectMeta = SUBJECT_KEYWORDS[a.subjectKey] || { color: "var(--accent)" };
-  const overdue = isOverdue(a.dueDate) && !sub.submitted;
+  const readAsCompleted = platformCompletedAssignments.has(a.id) && !sub.submitted;
+  const overdue = isOverdue(a.dueDate) && !sub.submitted && !readAsCompleted;
 
   let sideHtml;
   if (sub.ixlSmartScore != null && sub.ixlSmartScore >= 80) {
@@ -363,7 +374,7 @@ function renderAssignmentCard(a) {
     <div class="assign-card" style="--subj-color:${subjectMeta.color}">
       <div class="assign-main">
         <div class="assign-top">
-          <span class="assign-title">${a.title}</span>
+          <span class="assign-title">${a.title}${readAsCompleted ? '<span class="platform-complete-tag" data-tooltip="This homework has been marked as completed by the homework platform">READ AS COMPLETED</span>' : ''}</span>
         </div>
         <div class="assign-course">${a.course.name}</div>
         <div class="assign-desc">${a.description}</div>
@@ -389,10 +400,11 @@ function renderPanels() {
 
   Object.values(groups).flat().forEach(assignment => {
     const submission = currentSubmissions()[assignment.id] || {};
-    if (submission.submitted) {
-      categorized.submitted.push(assignment);
-      return;
-    }
+  if (submission.submitted && !platformCompletedAssignments.has(assignment.id)) {
+  categorized.submitted.push(assignment);
+  return;
+  }
+
     const due = new Date(`${assignment.dueDate}T23:59:59`);
     if (due < today) categorized.missing.push(assignment);
     else if (due <= twoWeeksFromToday) categorized.upcoming.push(assignment);
@@ -528,7 +540,25 @@ document.getElementById("open-settings-btn").addEventListener("click", () => dra
 document.getElementById("settings-icon-btn").addEventListener("click", () => drawer.classList.add("open"));
 document.getElementById("close-settings-btn").addEventListener("click", () => drawer.classList.remove("open"));
 
-function setDark(on) {
+  function runAutomaticChecks() {
+    if (!autoCheckEnabled) return;
+    linkedSites.filter((site) => site.linked).forEach((site) => runVerification(site));
+  }
+
+  function setAutomaticChecks(enabled) {
+    autoCheckEnabled = enabled;
+    if (autoCheckTimer) window.clearInterval(autoCheckTimer);
+    autoCheckTimer = enabled ? window.setInterval(runAutomaticChecks, 30000) : null;
+  }
+
+  document.getElementById("auto-check-toggle").addEventListener("change", (event) => {
+    setAutomaticChecks(event.target.checked);
+    if (event.target.checked) runAutomaticChecks();
+  });
+  setAutomaticChecks(true);
+
+  function setDark(on) {
+
   document.documentElement.setAttribute("data-theme", on ? "dark" : "light");
   localStorage.setItem("docket_dark", on ? "1" : "0");
 }
@@ -762,17 +792,46 @@ document.getElementById("add-site-btn").addEventListener("click", () => {
    INIT
    ================================================================ */
 const loadingFacts = [
-  "Fun fact: Octopuses have three hearts.",
-  "Fun fact: Honey never spoils when stored properly.",
-  "Fun fact: A group of flamingos is called a flamboyance.",
-  "Fun fact: Bananas are berries, but strawberries are not.",
-  "Fun fact: The first computer mouse was made of wood.",
+  "Octopuses have three hearts.", "Honey does not spoil when stored properly.", "A group of flamingos is called a flamboyance.", "Bananas are berries, but strawberries are not.", "The first computer mouse was made of wood.",
+  "Some turtles can breathe through their skin.", "Crows can recognize individual human faces.", "A day on Venus is longer than its year.", "Wombat droppings are cube-shaped.", "Sea otters hold hands while sleeping.",
+  "The Eiffel Tower grows slightly taller in warm weather.", "Ravens can mimic human speech.", "Butterflies taste with their feet.", "Koalas have fingerprints remarkably similar to ours.", "A jiffy is an actual unit of time in physics.",
+  "Sharks are older than trees.", "Goats have rectangular pupils.", "The shortest war in history lasted about 38 minutes.", "Some cats are allergic to humans.", "A cloud can weigh more than a million pounds.",
+  "Cows have best friends and can become stressed when separated.", "The word robot comes from a Czech word meaning forced labor.", "A snail can sleep for years.", "The Moon has moonquakes.", "Pineapples take roughly two years to grow.",
+  "A group of crows is called a murder.", "Dolphins have names for one another.", "The human nose can remember thousands of smells.", "Saturn would float in water large enough to hold it.", "Some bamboo can grow nearly a meter in one day.",
+  "Penguins propose with pebbles.", "The heart of a shrimp is in its head.", "A bolt of lightning is hotter than the Sun's surface.", "Jellyfish have existed longer than dinosaurs.", "The fingerprints of a koala are unique.",
+  "Oxford University is older than the Aztec Empire.", "A group of owls is called a parliament.", "Frogs can freeze without dying.", "The dot over a lowercase i is called a tittle.", "The inventor of the Pringles can was buried in one.",
+  "Some ants farm fungus for food.", "A blue whale's tongue can weigh as much as an elephant.", "The first oranges were not orange.", "Hummingbirds cannot walk.", "A group of pugs is called a grumble.",
+  "The Sun contains more than 99 percent of the solar system's mass.", "Raspberries are made of many tiny fruits.", "A narwhal's tusk is actually a tooth.", "Sloths can hold their breath longer than dolphins.", "The hashtag symbol has a name: octothorpe.",
+  "The longest hiccuping spree lasted decades.", "Some spiders can fly using electric fields.", "The smell of rain is called petrichor.", "A group of giraffes is called a tower.", "The first email was sent in 1971.",
+  "A shrimp's heart is transparent.", "Caterpillars have more muscles than humans.", "The arctic tern migrates from pole to pole.", "The inventor of the frisbee became a frisbee after death.", "Pigeons can learn to distinguish paintings.",
+  "A group of hedgehogs is called a prickle.", "The Statue of Liberty sways in strong wind.", "Some fish can change sex.", "The word alphabet comes from alpha and beta.", "A day on Mercury lasts about 59 Earth days.",
+  "Alaska is both the westernmost and easternmost U.S. state.", "A group of parrots is called a pandemonium.", "The first video uploaded to a major video site featured a zoo visit.", "Mushrooms are more closely related to animals than plants.", "A single strand of spaghetti is called a spaghetto.",
+  "The Moon is moving slowly away from Earth.", "A group of jellyfish is called a smack.", "The human body contains enough carbon to fill many pencils.", "Some plants communicate through fungal networks.", "A violin has four strings.",
+  "The smell of freshly cut grass is a plant distress signal.", "A group of ferrets is called a business.", "The first oranges came from Southeast Asia.", "Elephants can recognize themselves in mirrors.", "A crocodile cannot stick out its tongue.",
+  "The Great Wall is not visible from the Moon with the naked eye.", "A group of ravens is called an unkindness.", "Some lizards can run across water.", "The Pacific Ocean is larger than all land areas combined.", "The word queue sounds the same when its last four letters are removed.",
+  "A group of kangaroos is called a mob.", "The Earth is not a perfect sphere.", "Some birds sleep while flying.", "A group of crows can remember dangerous people.", "A teaspoon of neutron-star matter would weigh billions of tons.",
+  "The first footprints on the Moon will remain for millions of years.", "A group of zebras is called a dazzle.", "The average cloud moves with the wind.", "Some plants eat insects for nutrients.", "A group of porcupines is called a prickle.",
+  "The first known recipe was for beer.", "A group of lemurs is called a conspiracy.", "Some frogs use their eyes to help swallow food.", "The Earth gets about 100 tons of space dust each day.", "A group of seals is called a bob.",
+  "The word dinosaur means terrible lizard.", "Some spiders recycle their webs by eating them.", "A group of rhinos is called a crash.", "The deepest ocean trench is deeper than Everest is tall.", "A day on Jupiter is less than ten hours.",
+  "A group of geese on the ground is a gaggle.", "Some trees share nutrients with nearby trees.", "The first oranges were green.", "A group of hippos is called a bloat.", "The human eye can distinguish millions of colors.",
+  "A group of cats is called a clowder.", "Some whales sing songs that travel across oceans.", "The Sahara was once much greener.", "A group of goats is called a trip.", "The smallest bones in the body are in the ear.",
+  "A group of lions is called a pride.", "Some birds use tools to get food.", "The Milky Way contains hundreds of billions of stars.", "A group of whales is called a gam.", "The human brain uses about as much power as a small light bulb.",
+  "A group of squirrels is called a scurry.", "Some octopuses carry coconut shells as shelter.", "The first Olympic games included poetry contests.", "A group of dolphins is called a pod.", "The Earth spins faster at the equator than near the poles.",
+  "A group of butterflies is called a kaleidoscope.", "Some plants can count passing days.", "A group of bats is called a cauldron.", "The Moon has no atmosphere like Earth's.", "Some fish recognize themselves in mirrors.",
+  "A group of penguins is called a colony.", "The Sun's light takes about eight minutes to reach Earth.", "A group of monkeys is called a troop.", "Some trees can live for thousands of years.", "The human skeleton is made of 206 bones.",
+  "A group of swans is called a bevy.", "Some ants can survive floods by forming rafts.", "The North Star is not the brightest star in the sky.", "A group of sharks is called a shiver.", "The first calendars followed the cycles of the Moon.",
+  "A group of sparrows is called a host.", "Some bees dance to show where food is.", "A group of partridges is called a covey.", "The Earth has more trees than the Milky Way has stars visible to the naked eye.", "A group of frogs is called an army.",
+  "Some lizards detach their tails to escape predators.", "A group of whales is called a pod.", "The first artificial satellite was launched in 1957.", "A group of ducklings is called a paddling.", "Some birds can see ultraviolet light.",
+  "A group of horses is called a herd.", "The Sun is a star.", "A group of seals is called a colony.", "Some fish glow in the dark.", "The Earth has one natural satellite.",
+  "A group of turkeys is called a rafter.", "Some plants close their leaves when touched.", "A group of flamingos is also called a stand.", "The speed of sound changes with temperature.", "A group of eagles is called a convocation.",
+  "Some whales use bubbles to make fishing nets.", "The first known map of the stars is thousands of years old.", "A group of mice is called a mischief.", "The Moon reflects sunlight rather than making its own.", "Some birds migrate using Earth's magnetic field.",
 ];
-
+let remainingLoadingFacts = [];
 function showStartupLoading() {
   const loadingScreen = document.getElementById("loading-screen");
   const fact = document.getElementById("loading-fact");
-  fact.textContent = loadingFacts[Math.floor(Math.random() * loadingFacts.length)];
+  if (!remainingLoadingFacts.length) remainingLoadingFacts = [...loadingFacts].sort(() => Math.random() - 0.5);
+  fact.textContent = `Fun fact: ${remainingLoadingFacts.pop()}`;
   window.setTimeout(() => loadingScreen.classList.add("is-hidden"), 1000);
 }
 
