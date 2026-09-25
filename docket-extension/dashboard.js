@@ -2,49 +2,6 @@
 "use strict";
 
 /* ================================================================
-   1. MOCK CANVAS API — courses, assignments, gradebook/submissions
-   In production these three objects are replaced by real calls to:
-     GET /api/v1/courses
-     GET /api/v1/courses/:id/assignments
-     GET /api/v1/courses/:id/students/submissions
-   and a Chrome-extension content script that reads the authenticated
-   Canvas session cookie to bypass district network blocks.
-   ================================================================ */
-
-const canvasCourses = [
-  { id: 1, name: "Grade 7 Mathematics — Period 3",      subjectHint: "math" },
-  { id: 2, name: "English Language Arts 7",              subjectHint: "english" },
-  { id: 3, name: "Life Science 7",                       subjectHint: "science" },
-  { id: 4, name: "U.S. History: Foundations",             subjectHint: "history" },
-];
-
-const canvasAssignments = [
-  { id: 101, courseId: 1, title: "IXL Lessons H.1, H.2, H.5 — Ratios & Proportions", dueDate: "2026-09-24", points: 20,
-    description: "Complete the assigned IXL skills at 80+ SmartScore before Thursday's quiz." },
-  { id: 102, courseId: 1, title: "IXL U.6 — Solving Two-Step Equations", dueDate: "2026-09-25", points: 15,
-    description: "Practice set covering two-step linear equations with rational coefficients." },
-  { id: 103, courseId: 2, title: "IXL Lessons W.3, W.4 — Commas and Clauses", dueDate: "2026-09-23", points: 10,
-    description: "Grammar review ahead of Friday's paragraph revision workshop." },
-  { id: 104, courseId: 2, title: "Reading Response: Chapter 6 of assigned novel", dueDate: "2026-09-26", points: 25,
-    description: "Submit a one-page written response covering the chapter's central conflict." },
-  { id: 105, courseId: 3, title: "IXL Lessons B.2 — Cell Structure and Function", dueDate: "2026-09-22", points: 15,
-    description: "Diagram labeling and vocabulary practice for the cell unit." },
-  { id: 106, courseId: 4, title: "Reading Guide: Articles of Confederation, pp. 40–52", dueDate: "2026-09-27", points: 10,
-    description: "Answer the guided reading questions in the shared packet." },
-];
-
-// Gradebook / submission endpoint — IXL SmartScore drives the
-// "verified completed" vs "launcher" UI split described below.
-const canvasSubmissions = {
-  101: { submitted: true,  ixlSmartScore: 92 },
-  102: { submitted: true,  ixlSmartScore: 61 },   // below 80 → still a launcher
-  103: { submitted: true,  ixlSmartScore: 84 },
-  104: { submitted: false, ixlSmartScore: null }, // no IXL score, plain assignment
-  105: { submitted: true,  ixlSmartScore: 74 },
-  106: { submitted: false, ixlSmartScore: null },
-};
-
-/* ================================================================
    2. INTELLIGENT SUBJECT MATCHING
    Deduces subject from a Canvas course name so unlinked assignment
    text (like a bare "IXL Lessons H.1, H.2") can still be routed to
@@ -286,12 +243,12 @@ async function runVerification(site) {
 
   const catalogEntry = homeworkSitesCatalog.find(c => c.id === site.catalogId);
   const keywords = catalogEntry ? catalogEntry.matchKeywords : [site.name.toLowerCase()];
-  const matches = canvasAssignments.filter(a => {
-    const course = canvasCourses.find(c => c.id === a.courseId);
+  const matches = currentAssignments().filter(a => {
+    const course = currentCourses().find(c => c.id === a.courseId);
     return keywords.some(k => a.title.toLowerCase().includes(k) || (course && course.name.toLowerCase().includes(k)));
   });
 
-  const results = matches.length ? matches : canvasAssignments.filter(a => a.title.toLowerCase().includes(site.name.toLowerCase()));
+  const results = matches.length ? matches : currentAssignments().filter(a => a.title.toLowerCase().includes(site.name.toLowerCase()));
   const logListEl = document.getElementById("verify-log-list");
   const timestamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
@@ -320,8 +277,7 @@ async function runVerification(site) {
    When this page is opened as a packaged extension page (rather
    than dragged in as a plain file), chrome.storage is available and
    may hold real data content-script.js scraped from an open Canvas tab.
-   Opened as a plain file, chrome.storage is undefined and the mock data
-   drives the preview.
+   Until Canvas is synced, the assignment panels remain empty.
    ================================================================ */
 let liveAssignments = null;
 let liveSubmissions = null;
@@ -355,9 +311,9 @@ function applyLiveSync(scraped) {
 const assignmentPanelsEl = document.getElementById("assignment-panels");
 const subjectNavEl = document.getElementById("subject-nav");
 
-function currentAssignments() { return liveAssignments || canvasAssignments; }
-function currentSubmissions() { return liveSubmissions || canvasSubmissions; }
-function currentCourses() { return liveCourses || canvasCourses; }
+function currentAssignments() { return liveAssignments || []; }
+function currentSubmissions() { return liveSubmissions || {}; }
+function currentCourses() { return liveCourses || []; }
 function buildGroupedData() {
   const groups = {};
   currentAssignments().forEach(a => {
@@ -483,7 +439,7 @@ function renderSubjectNav() {
   const groups = buildGroupedData();
   let html = `<button class="subject-btn ${activeSubjectFilter === "all" ? "active" : ""}" data-subject="all">
       <span class="label">All subjects</span>
-      <span class="subject-count">${canvasAssignments.length}</span>
+      <span class="subject-count">${currentAssignments().length}</span>
     </button>`;
 
   Object.keys(groups).forEach(key => {

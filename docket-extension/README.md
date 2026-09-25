@@ -32,7 +32,7 @@ before publishing it.
 
 ## Test that it works
 
-- **Dashboard opens**: click the toolbar icon any time — it should open (or refresh) the dashboard in a new tab, using the same mock data as before.
+- **Dashboard opens**: click the toolbar icon any time — it should open (or refresh) the dashboard in a new tab. Assignments appear after Canvas sync.
 - **It's really an extension now**: open the dashboard tab's DevTools console (right-click → Inspect → Console tab) and type `chrome.runtime.id` — if it prints an ID instead of an error, the page is running with extension privileges.
 - **Content script is active**: visit any `instructure.com` Canvas page (your school's Canvas), open DevTools → Console, and refresh — after about a second you should NOT see errors from `content-script.js`. This confirms it ran; it's still a template, so it won't have found real assignments unless the CSS selectors happen to match your school's Canvas theme.
 - **Reload after edits**: any time you change a file in this folder, go back to `chrome://extensions` and click the small reload icon on Docket's card — Chrome doesn't auto-refresh unpacked extensions.
