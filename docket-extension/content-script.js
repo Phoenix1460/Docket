@@ -39,11 +39,13 @@
       return { title, url, source: "authenticated-page" };
     }).filter(Boolean).slice(0, 100).map((assignment) => {
       const node = [...document.querySelectorAll(selectors.join(","))].find((candidate) => clean(candidate.textContent || candidate.getAttribute("aria-label")) === assignment.title);
-      const context = clean(node?.closest("article, li, tr, [class*='card'], [class*='assignment'], [class*='activity']")?.innerText || node?.parentElement?.innerText || node?.innerText || "");
-      const text = context.toLowerCase();
+      const card = node?.closest("article, li, tr, [class*='card'], [class*='assignment'], [class*='activity'], [data-testid*='assignment'], [data-testid*='activity']") || node?.parentElement || node;
+      const context = clean(card?.innerText || node?.innerText || "");
+      const attributes = clean(`${card?.getAttribute("aria-label") || ""} ${card?.getAttribute("data-status") || ""} ${card?.getAttribute("data-state") || ""} ${card?.className || ""}`);
+      const text = `${context} ${attributes}`.toLowerCase();
       const completionMarker = /\b(completed|finished|mastered|submitted|passed|done|100\s*%|checkmark|check mark)\b/.test(text);
-      const incompleteMarker = /\b(incomplete|not completed|in progress|unfinished|attempt|start|continue|assigned)\b/.test(text);
-      return { ...assignment, description: context, completed: completionMarker && !incompleteMarker };
+      const incompleteMarker = /\b(incomplete|not completed|in progress|unfinished|attempt|start|continue|assigned|not started)\b/.test(text);
+      return { ...assignment, description: `${context} ${attributes}`.trim(), completed: completionMarker && !incompleteMarker };
     });
   }
 

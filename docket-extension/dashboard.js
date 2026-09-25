@@ -247,7 +247,10 @@ function assignmentTextsMatch(canvasAssignment, platformAssignment) {
   const platformText = `${platformAssignment.title || ""} ${platformAssignment.description || ""}`.toLowerCase();
   if (!canvasText || !platformText) return false;
   if (canvasText.includes(platformText) || platformText.includes(canvasText)) return true;
-  const canvasTokens = new Set(canvasText.replace(/[^a-z0-9]+/g, " ").split(" ").filter((token) => token.length > 2));
+  const canvasIds = canvasText.match(/\b\d+(?:\.\d+)+\b/g) || [];
+  const platformIds = platformText.match(/\b\d+(?:\.\d+)+\b/g) || [];
+  if (canvasIds.some((id) => platformIds.includes(id))) return true;
+  const canvasTokens = new Set(canvasText.replace(/[^a-z0-9]+/g, " ").split(" ").filter((token) => token.length > 2 && !["homework", "assignment", "algebra", "math"].includes(token)));
   const sharedTokens = platformText.replace(/[^a-z0-9]+/g, " ").split(" ").filter((token) => token.length > 2 && canvasTokens.has(token));
   return sharedTokens.length >= 2;
 }
