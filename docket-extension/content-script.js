@@ -39,8 +39,9 @@
       return { title, url, source: "authenticated-page" };
     }).filter(Boolean).slice(0, 100).map((assignment) => {
       const node = [...document.querySelectorAll(selectors.join(","))].find((candidate) => clean(candidate.textContent || candidate.getAttribute("aria-label")) === assignment.title);
-      const text = clean(node?.parentElement?.innerText || node?.innerText || "").toLowerCase();
-      return { ...assignment, completed: /completed|complete|finished|mastered|submitted|passed|100%/.test(text) };
+      const context = clean(node?.closest("article, li, tr, [class*='card'], [class*='assignment'], [class*='activity']")?.innerText || node?.parentElement?.innerText || node?.innerText || "");
+      const text = context.toLowerCase();
+      return { ...assignment, description: context, completed: /completed|complete|finished|mastered|submitted|passed|100%/.test(text) };
     });
   }
 

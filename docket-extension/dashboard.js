@@ -154,7 +154,7 @@ const homeworkSitesCatalog = [
   { id: "aleks",       name: "McGraw Hill / ALEKS", matchKeywords: ["aleks", "mcgraw hill", "mcgraw-hill", "mheducation"] },
   { id: "readingplus", name: "Reading Plus",    matchKeywords: ["reading plus"] },
   { id: "iready",      name: "i-Ready",         matchKeywords: ["i-ready", "iready"] },
-  { id: "bigideasmath",name: "Big Ideas Math",  matchKeywords: ["big ideas math", "bigideasmath", "bim"] },
+  { id: "bigideasmath",name: "Big Ideas Math",  matchKeywords: ["big ideas math", "big ideas", "bigideasmath", "big-ideas", "bim"] },
   { id: "lumio",       name: "Lumio",           matchKeywords: ["lumio"] },
   { id: "sadlier",     name: "Sadlier",         matchKeywords: ["sadlier", "vocabulary workshop"] },
   { id: "goformative", name: "Go-Formative",    matchKeywords: ["go-formative", "goformative", "formative"] },
@@ -234,6 +234,24 @@ function renderSiteList() {
 // In production this step is the Chrome extension issuing an
 // authenticated request (via the ClassLink session or the site's
 // gradebook API) instead of simulated steps + existing mock scores.
+function normalizedAssignmentText(assignment, course) {
+  return `${assignment.title || ""} ${assignment.description || ""} ${course?.name || ""}`.toLowerCase().replace(/<[^>]*>/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function textMatchesKeywords(text, keywords) {
+  return keywords.some((keyword) => text.includes(keyword.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()));
+}
+
+function assignmentTextsMatch(canvasAssignment, platformAssignment) {
+  const canvasText = `${canvasAssignment.title || ""} ${canvasAssignment.description || ""}`.toLowerCase();
+  const platformText = `${platformAssignment.title || ""} ${platformAssignment.description || ""}`.toLowerCase();
+  if (!canvasText || !platformText) return false;
+  if (canvasText.includes(platformText) || platformText.includes(canvasText)) return true;
+  const canvasTokens = new Set(canvasText.replace(/[^a-z0-9]+/g, " ").split(" ").filter((token) => token.length > 2));
+  const sharedTokens = platformText.replace(/[^a-z0-9]+/g, " ").split(" ").filter((token) => token.length > 2 && canvasTokens.has(token));
+  return sharedTokens.length >= 2;
+}
+
 async function runVerification(site) {
   const statusLine = document.getElementById("verify-status-line");
   const steps = site.authMethod === "classlink"
@@ -249,13 +267,16 @@ async function runVerification(site) {
   const keywords = catalogEntry ? catalogEntry.matchKeywords : [site.name.toLowerCase()];
   const matches = currentAssignments().filter(a => {
     const course = currentCourses().find(c => c.id === a.courseId);
-    return keywords.some(k => a.title.toLowerCase().includes(k) || (course && course.name.toLowerCase().includes(k)));
+    return textMatchesKeywords(normalizedAssignmentText(a, course), keywords);
   });
 
-  const results = matches.length ? matches : currentAssignments().filter(a => a.title.toLowerCase().includes(site.name.toLowerCase()));
+  const results = matches.length ? matches : currentAssignments().filter(a => {
+    const course = currentCourses().find(c => c.id === a.courseId);
+    return textMatchesKeywords(normalizedAssignmentText(a, course), [site.name]);
+  });
   const platformAssignments = site.assignments || liveSiteConnections[site.catalogId]?.assignments || [];
   results.forEach((assignment) => {
-    const match = platformAssignments.find((item) => item.title && (item.title.toLowerCase().includes(assignment.title.toLowerCase()) || assignment.title.toLowerCase().includes(item.title.toLowerCase())));
+    const match = platformAssignments.find((item) => assignmentTextsMatch(assignment, item));
     if (match?.completed) platformCompletedAssignments.add(assignment.id);
     else platformCompletedAssignments.delete(assignment.id);
   });
